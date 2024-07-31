@@ -1,0 +1,295 @@
+import { RecommendationsConfig, RecipeReferenceLookup, RecipeReference, recommend } from "recs";
+import { UserAttributeLookup, UserAttributeReference, UserSegmentLookup, UserSegmentReference } from "common";
+
+export class JourneyBuilderTriggerUtils {
+    // Default catalog object type
+    static DEFAULT_CATALOG_OBJECT = "Product";
+    // Default attributes for catalog objects
+    static DEFAULT_CATALOG_OBJECT_ATTRIBUTES = ["id", "name", "imageUrl", "url", "price", "priceHyper","urlTH", "nameTH","shortName", "shortNameTH"];
+    // Maximum number of recommendations to fetch
+    static MAX_RECOMMENDATIONS = 8;
+
+    // ================================== Catalog Localization =====================================
+    // If you use catalog localization and would like to receive localized catalog data
+    // in Marketing Cloud, change the value of 'IS_CATALOG_LOCALIZED' to true.
+    // =============================================================================================
+    static IS_CATALOG_LOCALIZED = false;
+
+    // Fetches flat (non-nested) catalog items based on context and IDs
+    static getFlatItems(context: CampaignComponentContext, catalogObject: string, ids: string[]): any[] {
+        const locale: string = context.locale || "";
+
+        return context.services.catalog
+            .findItems(catalogObject, ids)
+            .map((item) => item.toFlatJSON(
+                JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT_ATTRIBUTES,
+                JourneyBuilderTriggerUtils.IS_CATALOG_LOCALIZED ? locale : null
+            ));
+    }
+
+    static getUserAttributeValue(attributeId: string, user: User) {
+        return (user?.attributes?.[attributeId] as Attribute|undefined)?.value?.toString() || "";
+    }
+
+    static getUserSegments(segments: UserSegmentReference[], user: User) {
+        if (segments?.length && user?.segmentMembership?.length) {
+            const selectedSegments: string[] = segments.map((s) => s.id);
+            return user.segmentMembership
+                .filter((sm) => selectedSegments.includes(sm.segmentId))
+                .map((sm) => sm.segmentName).join(",");
+        }
+        return "";
+    }
+
+    static getRecommendationsFullItemDetails(recipe: RecipeReference, context: CampaignComponentContext){
+        let result = [];
+
+        if (recipe) {
+            const recipeConfig = new RecommendationsConfig();
+            recipeConfig.maxResults = JourneyBuilderTriggerUtils.MAX_RECOMMENDATIONS;
+            recipeConfig.recipe = recipe;
+            if(recipeConfig?.recipe?.id) {
+                const recs = recommend(context, recipeConfig).map((i) => i.id);
+                result = JourneyBuilderTriggerUtils.getFlatItems(context, recipeConfig.itemType, recs);
+            }
+        }
+
+        try {
+            return JSON.stringify(result);
+        } catch (ex) {
+            return "[]";
+        }
+
+    }
+
+    static getRecommendationsOnlySku(recipe: RecipeReference, context: CampaignComponentContext) {
+        let result = [];
+
+        if(recipe) {
+            const recipeConfig = new RecommendationsConfig();
+            recipeConfig.maxResults = JourneyBuilderTriggerUtils.MAX_RECOMMENDATIONS;
+            recipeConfig.recipe = recipe;
+            if(recipeConfig?.recipe?.id) {
+                const recs = recommend(context, recipeConfig).map((i)=>i.id);
+                result = recs;
+            }
+        }
+
+        try{
+            return JSON.stringify(result);
+        } catch (ex) {
+            return "[]";
+        }
+
+    }
+
+    static getTriggerContext(context: CampaignComponentContext): any {
+        const result = {};
+        
+        if (context.trigger?.type) {
+
+            result["Trigger_Type"] = context.trigger.type;
+            let trigger;
+            switch (context.trigger.type) {
+                case "SegmentLeave":
+                case "SegmentJoin":
+                    trigger = context.trigger as SegmentTrigger;
+                    result["Trigger_Segment"] = trigger.segmentName; 
+                    break;
+                case "EventAction":
+                    trigger = context.trigger as ActionTrigger;
+                    result["Trigger_Action"] = trigger.action;                     
+                    break;
+                default:
+                    trigger = context.trigger as CatalogTrigger;
+                    // const items: any[] = [];
+                    const itemsId: String[] = [];
+
+                    if (trigger.itemIdsByType) {
+                        
+                        // Object.keys(trigger.itemIdsByType).forEach((catalogObject) => {
+                        //     items.push(...JourneyBuilderTriggerUtils.getFlatItems(
+                        //         context, catalogObject, trigger.itemIdsByType[catalogObject]
+                        //     ));
+                        // });
+
+                        Object.keys(trigger.itemIdsByType).forEach((catalogObject) => {
+                            itemsId.push(...trigger.itemIdsByType[catalogObject]);
+                        });
+                    }
+
+                    try {
+                        result["Trigger_Catalog_Items"] = JSON.stringify(itemsId);
+                    } catch (ex) {}
+                    
+                    break;
+            }
+        }
+        
+        return result;
+    }
+}
+
+export class JourneyBuilderTriggerPayload {
+    @title(" ")
+    @header("User Attributes")
+    @headerSubtitle(`After you select user attributes, create a field for each user attribute in the event data
+        extension in Marketing Cloud. Data extension field names must match user attribute names.`)
+    @lookupOptions(() => new UserAttributeLookup())
+    attributes: UserAttributeReference[];
+
+    @title(" ")
+    @header("Recommendations")
+    @headerSubtitle(`After you select a recipe, create a Recommendations field in the event data extension in
+        Marketing Cloud. Doing so allows you to add a Recommendations block to an email in Marketing Cloud.`)
+    @lookupOptions(() => new RecipeReferenceLookup(JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT))
+    recipe: RecipeReference;
+
+    @title("Include Additional Recommendations1")
+    @subtitle(`After you select a recipe, create an Additional_Recommendations field in the event data extension in
+        Marketing Cloud. Doing so allows you to add an Additional Recommendations block to an email in Marketing Cloud.`)
+    includeAdditionalRecommendations1: boolean = false;
+
+    @title(" ")
+    @shownIf(this, (self) => self.includeAdditionalRecommendations1)
+    @lookupOptions(() => new RecipeReferenceLookup(JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT))
+    additionalRecipe1: RecipeReference;
+
+    @title("Include Additional Recommendations2")
+    @subtitle(`After you select a recipe, create an Additional_Recommendations field in the event data extension in
+        Marketing Cloud. Doing so allows you to add an Additional Recommendations block to an email in Marketing Cloud.`)
+    includeAdditionalRecommendations2: boolean = false;
+
+    @title(" ")
+    @shownIf(this, (self) => self.includeAdditionalRecommendations2)
+    @lookupOptions(() => new RecipeReferenceLookup(JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT))
+    additionalRecipe2: RecipeReference;
+
+    @title("Include User Segments")
+    @subtitle(`After you select segments, create a Segments field in the event data extension in Marketing Cloud.`)
+    includeSegments: boolean = false;
+
+    @title(" ")
+    @shownIf(this, (self) => self.includeSegments)
+    @lookupOptions(() => new UserSegmentLookup())
+    segments: UserSegmentReference[];
+
+    static fourElement(fullItems,recommendation){
+        
+        let lineRecommendations = fullItems.slice();
+
+        lineRecommendations = lineRecommendations.concat(recommendation);
+
+        return lineRecommendations.slice(0,4);
+    }
+
+    getPayload(context: CampaignComponentContext) {
+        const triggerContext = JourneyBuilderTriggerUtils.getTriggerContext(context);
+        
+        const result = {
+            "Campaign": context.campaignId,
+            "Experience": context.experienceId,
+            ...triggerContext
+        };
+
+        this.attributes?.forEach((attr) => {
+            result[attr.id] = JourneyBuilderTriggerUtils.getUserAttributeValue(attr.id, context.user);
+        });
+        
+        if (this.includeSegments) {
+            result["Segments"] = JourneyBuilderTriggerUtils.getUserSegments(this.segments, context.user);
+        }
+
+        if (this.includeAdditionalRecommendations1) {
+            result["Additional_Recommendations_1"] =
+                JourneyBuilderTriggerUtils.getRecommendationsOnlySku(this.additionalRecipe1, context);
+        }
+
+        if (this.includeAdditionalRecommendations2) {
+            result["Additional_Recommendations_2"] = 
+                JourneyBuilderTriggerUtils.getRecommendationsOnlySku(this.additionalRecipe2,context);
+        }
+
+        result["Recommendations"] = JourneyBuilderTriggerUtils.getRecommendationsOnlySku(this.recipe, context);
+        
+        
+        let itemIds;
+        if(triggerContext["Trigger_Catalog_Items"]){
+            itemIds = JSON.parse(triggerContext["Trigger_Catalog_Items"]);
+        } else {
+            itemIds = JSON.parse(JourneyBuilderTriggerUtils.getRecommendationsOnlySku(this.recipe, context));
+        }
+        const fullItems = JourneyBuilderTriggerUtils.getFlatItems(context,JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT, itemIds);
+        
+       
+
+        let lineRecommendations;
+
+        if(fullItems.length > 4 ){
+            lineRecommendations = fullItems.slice(0,4);
+        } else if (fullItems.length < 4) {
+            let recommendationItems = JourneyBuilderTriggerUtils.getFlatItems(context,JourneyBuilderTriggerUtils.DEFAULT_CATALOG_OBJECT, JSON.parse(result["Recommendations"]));
+            lineRecommendations = JourneyBuilderTriggerPayload.fourElement(fullItems, recommendationItems);
+        } else {
+            lineRecommendations = fullItems;
+        }
+
+        const lineRecommendationsEN = lineRecommendations.map(item => ({
+            price: item.price,
+            name: item.name,
+            id: item.id,
+            priceHyper: item.priceHyper,
+            url: item.url,
+            imageUrl: item.imageUrl,
+            shortName: item.shortName
+        }));
+
+        const lineRecommendationsTH = lineRecommendations.map(item => ({
+            price: item.price,
+            nameTH: item.nameTH,
+            id: item.id,
+            priceHyper: item.priceHyper,
+            urlTH: item.urlTH,
+            imageUrl: item.imageUrl,
+            shortNameTH: item.shortNameTH
+        }));
+        
+        result["Line_Recommendations_en"] = JSON.stringify(lineRecommendationsEN);
+        result["Line_Recommendations_TH"] = JSON.stringify(lineRecommendationsTH);
+
+
+        if (Array.isArray(lineRecommendations) && lineRecommendations.length > 0) {
+            const firstItem = lineRecommendations[0];
+
+            result["Product_ID"] = firstItem.id;
+            result["Product_NameEN"] = firstItem.name;
+            result["Product_NameTH"] = firstItem.nameTH;
+            result["Shorten_Product_Name_EN"] = firstItem.shortName;
+            result["Shorten_Product_Name_TH"] = firstItem.shortNameTH;
+            result["Product_Price"] = firstItem.price;
+            result["Product_Price_Hyper"] = firstItem.priceHyper;
+            result["Product_URL_EN"] = firstItem.url;
+            result["Product_URL_TH"] = firstItem.urlTH;
+            result["Product_Image_URL"] = firstItem.imageUrl;
+
+        }
+        
+        return result;
+    }
+}
+
+export class JourneyBuilderTriggerTemplate implements CampaignTemplateComponent {
+    @title(" ")
+    @header("Optional Settings")
+    @headerSubtitle(`By default, the trigger includes the ContactKey and Trigger_Type fields. Depending on the
+        trigger type, it could also include Trigger_Segment, Trigger_Action, and Trigger_Catalog_Items fields.
+        Create these fields in your Marketing Cloud data extension in order to store the data in Marketing Cloud.
+        Select any of the following optional settings so your developer can use the data in the Journey for this
+        campaign. For the data from the options you select to be available in Journey Builder, create the fields
+        in the Marketing Cloud Data Extension.`)
+    templateConfig: JourneyBuilderTriggerPayload = new JourneyBuilderTriggerPayload();
+
+    run(context: CampaignComponentContext) {
+        return this.templateConfig.getPayload(context);
+    }
+}

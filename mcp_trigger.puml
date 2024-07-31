@@ -1,0 +1,44 @@
+@startuml
+
+class JourneyBuilderTriggerUtils {
+    - static DEFAULT_CATALOG_OBJECT : String
+    - static DEFAULT_CATALOG_OBJECT_ATTRIBUTES : String[]
+    - static MAX_RECOMMENDATIONS : int
+    - static IS_CATALOG_LOCALIZED : boolean
+
+    + static getFlatItems(context: CampaignComponentContext, catalogObject: String, ids: String[]) : any[]
+    + static getUserAttributeValue(attributeId: String, user: User) : String
+    + static getUserSegments(segments: UserSegmentReference[], user: User) : String
+    + static getRecommendationsFullItemDetails(recipe: RecipeReference, context: CampaignComponentContext) : String
+    + static getRecommendationsOnlySku(recipe: RecipeReference, context: CampaignComponentContext) : String
+    + static getTriggerContext(context: CampaignComponentContext) : any
+}
+
+class JourneyBuilderTriggerPayload {
+    - attributes : UserAttributeReference[]
+    - recipe : RecipeReference
+    - includeAdditionalRecommendations1 : boolean
+    - additionalRecipe1 : RecipeReference
+    - includeAdditionalRecommendations2 : boolean
+    - additionalRecipe2 : RecipeReference
+    - includeSegments : boolean
+    - segments : UserSegmentReference[]
+
+    + getPayload(context: CampaignComponentContext) : any
+    + static fourElement(fullItems, recommendation) : any[]
+}
+
+class JourneyBuilderTriggerTemplate {
+    - templateConfig : JourneyBuilderTriggerPayload
+
+    + run(context: CampaignComponentContext) : any
+}
+
+JourneyBuilderTriggerTemplate --> JourneyBuilderTriggerPayload : templateConfig
+JourneyBuilderTriggerPayload ..> JourneyBuilderTriggerUtils : uses
+JourneyBuilderTriggerPayload --> "1" UserAttributeReference : attributes
+JourneyBuilderTriggerPayload --> "1" RecipeReference : recipe
+JourneyBuilderTriggerPayload --> "1" UserSegmentReference : segments
+JourneyBuilderTriggerPayload --> "1" CampaignComponentContext : context
+
+@enduml
